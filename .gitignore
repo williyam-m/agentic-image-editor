@@ -1,0 +1,19 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# node
+node_modules/
+dist/
+
+# runtime data
+data/
+logs/
+.run/
+.DS_Store
