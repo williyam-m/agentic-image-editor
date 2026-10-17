@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from functools import lru_cache
 
 from ..brand.kit import COLORWAYS, FONTS, FORMATS, PALETTE, STORY_SAFE, Asset, BrandKit
 from ..config import get_settings
@@ -18,8 +19,9 @@ from .brief import Brief
 from .spec import DesignSpec, Layer, new_id
 
 # Blooms with a solid centre (a logo or photo reads well on/in them).
-# Full-bodied blooms: a wordmark or a face reads well inside them.
-SOLID_BLOOMS = ("harmony", "peace")
+# Bloom suitability is measured from each shape's mask (see bloom_profile), not hard-coded:
+# photo crops need a full body; logo accents need a spot that can hold the wordmark.
+PHOTO_MIN_FILL = 0.45
 
 
 @dataclass
@@ -75,6 +77,7 @@ class Builder:
         self.top = STORY_SAFE["top"] * self.H if self.story else self.m
         self.text_bottom = (1 - STORY_SAFE["bottom"]) * self.H if self.story else self.H - self.m
         self.layers: list[Layer] = []
+        self.brief_bloom_defaulted = "bloom" not in brief.model_fields_set
         self.api = get_settings().public_api_url
 
     # ---- primitives ---------------------------------------------------------------
@@ -149,20 +152,63 @@ class Builder:
         idx = next((i for i, v in enumerate(rows) if v >= threshold * full), 0)
         return idx / 64
 
-    def spot_in_mask(self, asset: Asset, box: Box, w: float, h: float) -> tuple[float, float]:
+    def logo_in_bloom(self, top: float, lw: float, lh: float) -> bool:
+        """Bloom accent holding the white wordmark. Tries the chosen bloom, shrinking the logo until the
+        shape covers it fully; falls back to other logo-friendly blooms. Returns False if none fits."""
+        W, u = self.W, self.u
+        first = self.pick_bloom("logo")
+        order = [first] + [b for b in self.bloom_pool("logo") if b != first]
+        ratio = lh / lw
+        for name in order:
+            bloom = self.kit.bloom(name)
+            if not bloom:
+                continue
+            bw = 0.52 * W
+            bb = contain(Box(W - 0.4 * W, top, bw, bw * 0.8), bloom.width, bloom.height)
+            w = min(lw * 0.85, bb.w * 0.42)
+            while w >= 0.11 * W:
+                lx, ly, cov = self.spot_in_mask(bloom, bb, w * 1.3, w * ratio * 1.9, with_cov=True)
+                if cov >= 0.985:
+                    self.add(self.vector(f"{bloom.name} accent", "bloom", bloom, bb, PALETTE["blue"]))
+                    self.logo(lx + w * 0.15, ly + w * ratio * 0.45, w, PALETTE["white"])
+                    return True
+                w *= 0.9
+        return False
+
+    def bloom_pool(self, use: str) -> list[str]:
+        """Blooms that suit ``use`` ("photo" crop or "logo" accent), by measured shape."""
+        names = []
+        for a in sorted(self.kit.by_category("bloom"), key=lambda x: x.id):
+            fill, logo_fit = bloom_profile(a)
+            if use == "photo" and fill >= PHOTO_MIN_FILL:
+                names.append(a.id.removeprefix("bloom-"))
+            elif use == "logo" and logo_fit >= 0.99:
+                names.append(a.id.removeprefix("bloom-"))
+        return names
+
+    def pick_bloom(self, use: str) -> str:
+        """The planner's bloom when it suits this use; otherwise a varied pick (seeded per design)."""
+        pool = self.bloom_pool(use) or ["harmony"]
+        want = self.brief.bloom
+        if want in pool and not self.brief_bloom_defaulted:
+            return want
+        return self.rng.choice(pool)
+
+    def spot_in_mask(self, asset: Asset, box: Box, w: float, h: float, with_cov: bool = False):
         """Top-left of the w×h spot inside ``asset``'s shape (drawn at ``box``) that the shape covers best."""
         import numpy as np
         from PIL import Image
 
         if not asset.mask:
-            return box.x + (box.w - w) / 2, box.y + (box.h - h) / 2
+            c = (box.x + (box.w - w) / 2, box.y + (box.h - h) / 2)
+            return (*c, 0.0) if with_cov else c
         k = 4.0  # work at 1/4 resolution
         mw, mh = max(1, int(box.w / k)), max(1, int(box.h / k))
         m = np.asarray(Image.open(get_settings().brand_dir / asset.mask).convert("L").resize((mw, mh))) / 255.0
         # Only consider spots inside the canvas.
         bw, bh = max(1, int(w / k)), max(1, int(h / k))
         ii = np.pad(m.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
-        best, best_xy = -1.0, (box.x + (box.w - w) / 2, box.y + (box.h - h) / 2)
+        best, best_xy, best_cov = -1.0, (box.x + (box.w - w) / 2, box.y + (box.h - h) / 2), 0.0
         cx, cy = mw / 2, mh / 2
         for y in range(0, max(1, mh - bh + 1)):
             for x in range(0, max(1, mw - bw + 1)):
@@ -172,8 +218,8 @@ class Builder:
                 cov = (ii[y + bh, x + bw] - ii[y, x + bw] - ii[y + bh, x] + ii[y, x]) / (bw * bh)
                 score = cov - 0.0005 * ((x + bw / 2 - cx) ** 2 + (y + bh / 2 - cy) ** 2) ** 0.5
                 if score > best:
-                    best, best_xy = score, (ax, ay)
-        return best_xy
+                    best, best_xy, best_cov = score, (ax, ay), cov
+        return (*best_xy, best_cov) if with_cov else best_xy
 
     def logo_size(self) -> tuple[float, float]:
         asset = self.kit.logo()
@@ -381,15 +427,8 @@ class Builder:
         photo_top = card_y + card_h - 70 * u
         self.visual_layer(Box(0, photo_top, W, H - photo_top))
         lw, lh = self.logo_size()
-        bloom = self.kit.bloom(self.brief.bloom if self.brief.bloom in SOLID_BLOOMS else "harmony")
-        if bloom:
-            bw = 0.52 * W
-            bb = contain(Box(W - 0.4 * W, card_y + card_h - 30 * u, bw, bw * 0.8), bloom.width, bloom.height)
-            self.add(self.vector(f"{bloom.name} accent", "bloom", bloom, bb, PALETTE["blue"]))
-            lw, lh = lw * 0.85, lh * 0.85
-            lx, ly = self.spot_in_mask(bloom, bb, lw * 1.3, lh * 1.9)
-            self.logo(lx + lw * 0.15, ly + lh * 0.45, lw, PALETTE["white"])
-        else:
+        placed = self.logo_in_bloom(card_y + card_h - 30 * u, lw, lh)
+        if not placed:
             self.logo(W - m, card_y + card_h + 30 * u, lw, PALETTE["white"], align="right")
         self.add(self.rect("Card", "card", Box(card_x, card_y, card_w, card_h), self.cw["card"], radius=32 * u,
                            shadow=True))
@@ -429,7 +468,7 @@ class Builder:
         u, W, H, m = self.u, self.W, self.H, self.m
         self._background()
         lw, lh = self.logo_size()
-        bloom = self.brief.bloom if self.brief.bloom in SOLID_BLOOMS else "harmony"
+        bloom = self.pick_bloom("photo")
         if self.wide:
             self._text_stack(m, m, W * 0.46 - m, H - 2 * m - lh - 160 * u, self.cw["text"], 84 * u)
             self.logo(m, H - m - lh, lw)
@@ -516,6 +555,26 @@ class Builder:
                                       pw - (tx - x) - 0.3 * ph, PALETTE["navy"], "headline"))
             self.add(self.group(f"Checklist · {item}", "checklist_item", children))
             y += ph + gap
+
+
+@lru_cache(maxsize=64)
+def _profile(mask_rel: str) -> tuple[float, float]:
+    import numpy as np
+    from PIL import Image
+
+    m = np.asarray(Image.open(get_settings().brand_dir / mask_rel).convert("L").resize((100, 100))) / 255.0
+    ii = np.pad(m.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+    bw, bh = 46, 16  # wordmark box at ~40% of the bloom width, with padding
+    best = 0.0
+    for y in range(0, 100 - bh + 1, 2):
+        for x in range(0, 100 - bw + 1, 2):
+            best = max(best, (ii[y + bh, x + bw] - ii[y, x + bw] - ii[y + bh, x] + ii[y, x]) / (bw * bh))
+    return float(m.mean()), float(best)
+
+
+def bloom_profile(asset: Asset) -> tuple[float, float]:
+    """(fill ratio, best wordmark-spot coverage) for a bloom shape."""
+    return _profile(asset.mask) if asset.mask else (0.0, 0.0)
 
 
 def build_spec(brief: Brief, kit: BrandKit, variant: int = 0) -> DesignSpec:

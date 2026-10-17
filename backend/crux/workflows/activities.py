@@ -37,7 +37,8 @@ def plan_brief(args: dict[str, Any]) -> dict[str, Any]:
 
     brief = plan(args.get("prompt", ""), load_kit(), fmt=args.get("format", "feed"),
                  reference=args.get("reference"), base=args.get("base"), direction=args.get("direction"),
-                 variant=args.get("variant", 0), archetype=args.get("archetype"), colorway=args.get("colorway"))
+                 variant=args.get("variant", 0), archetype=args.get("archetype"), colorway=args.get("colorway"),
+                 bloom=args.get("bloom"))
     return brief.model_dump()
 
 

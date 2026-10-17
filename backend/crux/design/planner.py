@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import zlib
 from typing import Any
 
 from .. import llm
@@ -31,12 +32,17 @@ def variation_plan(base: dict[str, Any] | None, count: int) -> list[dict[str, An
     first = base.get("archetype") if base.get("archetype") in ARCHETYPE_ROTATION else "card_photo"
     others = [a for a in ARCHETYPE_ROTATION if a != first]
     plans = [{"direction": VARIATION_DIRECTIONS[0], "archetype": first, "colorway": base.get("colorway")}]
+    used = {base.get("bloom")}
     for i in range(1, count):
         arche = others[i - 1]
         colorway = None
         if i == 2:
             colorway = ALT_COLORWAY.get(DEFAULT_COLORWAY[arche], "navy")
         plans.append({"direction": VARIATION_DIRECTIONS[i], "archetype": arche, "colorway": colorway})
+    # Give each variant its own bloom so a set never repeats the same brand shape.
+    pool = [b for b in BLOOM_NAMES if b not in used]
+    for i, p in enumerate(plans):
+        p["bloom"] = pool[(zlib.crc32(str(base.get("headline")).encode()) + i * 5) % len(pool)]
     return plans[:count]
 
 
@@ -68,6 +74,7 @@ PROMPT_RULES = """Visual rules:
 - checklist has no hero visual (source=asset, asset_id=null) and needs exactly 3 checklist items.
 - stat cards suit card_photo and photo_bloom when a number strengthens the message.
 - Choose charms that echo the message (e.g. sparkle = new/magic, check = done, heart = love, clock = time).
+- Pick the bloom that matches the message's energy (all 12 are on-brand); don't default to Harmony — vary it.
 - Write like Xero: confident, warm, benefit-first, short.
 
 Legal & compliance (enterprise, non-negotiable):
@@ -150,7 +157,7 @@ def _normalize(raw: dict[str, Any], kit: BrandKit, fmt: str, archetype: str | No
 
 def plan(prompt: str, kit: BrandKit, *, fmt: str = "feed", reference: dict[str, Any] | None = None,
          base: dict[str, Any] | None = None, direction: str | None = None, variant: int = 0,
-         archetype: str | None = None, colorway: str | None = None) -> Brief:
+         archetype: str | None = None, colorway: str | None = None, bloom: str | None = None) -> Brief:
     parts = [f"Designer request: {prompt.strip() or 'Create an on-brand Xero ad.'}",
              f"Format: {FORMATS[fmt]['label']} ({FORMATS[fmt]['w']}x{FORMATS[fmt]['h']})."]
     if reference:
@@ -166,8 +173,12 @@ def plan(prompt: str, kit: BrandKit, *, fmt: str = "feed", reference: dict[str, 
         parts.append(f"Direction for this variation (#{variant + 1}): {direction}")
     if archetype:
         parts.append(f"Use the {archetype} archetype" + (f" with the {colorway} colourway." if colorway else "."))
+    if bloom:
+        parts.append(f"Use the {bloom.title()} Bloom.")
     system, user = _system(kit), "\n\n".join(parts)
     raw = llm.complete_json(system, user, tier="pro", temperature=0.85 if direction else 0.7, max_tokens=1600)
+    if bloom:
+        raw["bloom"] = bloom
     brief = _normalize(raw, kit, fmt, archetype, colorway)
     issues = copy_issues([brief.headline, brief.subhead or "", brief.cta, *brief.checklist,
                           brief.stat.label if brief.stat else ""])
@@ -176,6 +187,8 @@ def plan(prompt: str, kit: BrandKit, *, fmt: str = "feed", reference: dict[str, 
         feedback = ("\n\nYour previous answer broke the legal policy: " + "; ".join(i.detail for i in issues)
                     + ". Rewrite the copy without these, keeping everything else.")
         raw = llm.complete_json(system, user + feedback, tier="pro", temperature=0.5, max_tokens=1600)
+        if bloom:
+            raw["bloom"] = bloom
         brief = _normalize(raw, kit, fmt, archetype, colorway)
     log.info("planned %s/%s: %s", brief.archetype, brief.colorway, brief.headline)
     return brief
