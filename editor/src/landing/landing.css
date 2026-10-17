@@ -157,3 +157,6 @@ a:hover .arrow { transform: translateX(4px); }
   .l-marquee .track, .l-mesh i, .chip { animation: none; }
   .l-shot { transform: none !important; }
 }
+.frame-bar .frame-title { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-family: "Geist", sans-serif; font-size: 12px; font-weight: 600; color: #3a3532; }
+.frame-bar .frame-title img { width: 13px; height: 13px; }
+.frame .frame-bar .frame-title img { position: static; opacity: 1; transform: none; width: 13px; height: 13px; }

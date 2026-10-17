@@ -185,7 +185,7 @@ export function Landing() {
           </div>
           <div className="story-media">
             <div className="frame">
-              <div className="frame-bar"><i /><i /><i /><span>localhost:8787/studio</span></div>
+              <div className="frame-bar"><i /><i /><i /><span className="frame-title"><img src="/mark.svg" alt="" />Crux Studio</span></div>
               {FEATURES.map((f, i) => (
                 <img key={f.id} className={active === i ? "on" : ""} src={`/landing/${f.img}.jpg`} alt={f.title} loading="lazy" />
               ))}
