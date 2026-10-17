@@ -1,0 +1,15 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+python-dotenv>=1.0
+python-multipart>=0.0.9
+httpx>=0.27
+openai>=1.50
+temporalio>=1.8
+celery[redis]>=5.4
+redis>=5.0
+pillow>=10.4
+numpy>=1.26
+playwright>=1.47
+scipy>=1.13
