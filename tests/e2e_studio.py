@@ -2,7 +2,7 @@
 
 Every scenario runs in the real editor; the render-fidelity check compares the live canvas
 pixels with the server compositor's PNG of the same board (they must match).
-Usage: .venv/bin/python tests/e2e_studio.py [create|edit|photo|comment|comment-ui|variations|dna|manual|voice|intel|all]
+Usage: .venv/bin/python tests/e2e_studio.py [create|edit|photo|comment|comment-ui|variations|upload|dna|manual|voice|intel|all]
 The voice scenario feeds tests/fixtures/voice_edit_headline.wav through Chromium's fake microphone.
 """
 from __future__ import annotations
@@ -215,6 +215,44 @@ def main(what: str) -> None:
             assert len(boards) - before == 4
             print(f"✓ fidelity of a variation: {fidelity(page, 'variation'):.1f}/255")
             shot(page, "s05-variations")
+
+        if what in ("upload", "all"):
+            ref = sorted((ROOT / "Candidate-resources" / "Image_Ad_References").glob("*.png"))[0]
+            page.evaluate("() => window.__crux.setUi({ selection: null })")
+            layers_before = sum(len(list(_walk(b["layers"]))) for b in state(page)["doc"]["boards"])
+            # Dropping an image on the composer attaches it as a reference (not as a canvas layer).
+            page.evaluate("""async (url) => {
+                const blob = await (await fetch(url)).blob();
+                const dt = new DataTransfer();
+                dt.items.add(new File([blob], 'dropped.png', { type: 'image/png' }));
+                const el = document.querySelector('.composer');
+                for (const type of ['dragenter', 'dragover', 'drop'])
+                    el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+            }""", f"{URL}/favicon.png")
+            page.wait_for_selector("[data-testid=ref-attach]", timeout=10_000)
+            assert sum(len(list(_walk(b["layers"]))) for b in state(page)["doc"]["boards"]) == layers_before, \
+                "dropping on the composer added a canvas layer"
+            page.click("[data-testid=ref-remove]")
+            assert page.locator("[data-testid=ref-attach]").count() == 0
+            print("✓ drop on composer attaches a reference (no canvas layer added); remove works")
+
+            page.set_input_files("[data-testid=ref-file]", str(ref))
+            page.wait_for_selector("[data-testid=ref-attach]", timeout=10_000)
+            assert "4 variations of your image" in page.locator(".context-chip").text_content()
+            page.click("[data-testid=ref-count-2]")
+            assert "2 variations of your image" in page.locator(".context-chip").text_content()
+            n = page.locator(".design-card .dot.done").count() + 1
+            before = len(state(page)["doc"]["boards"])
+            page.click(".send")
+            dt = wait_count(page, ".design-card .dot.done", n, 300)
+            boards = state(page)["doc"]["boards"][before:]
+            print(f"✓ uploaded-image variations in {dt:.1f}s: {len(boards)} new boards · "
+                  + ", ".join(f"{b['brief'].get('archetype')}/{b['brief'].get('colorway')}" for b in boards))
+            assert len(boards) == 2
+            assert page.locator(".msg.user .ref-sent").count() >= 1, "reference thumbnail missing from the chat"
+            assert page.locator("[data-testid=ref-attach]").count() == 0, "attachment not cleared after sending"
+            print(f"✓ fidelity of an image variation: {fidelity(page, 'upload'):.1f}/255")
+            shot(page, "s05b-upload-variations")
 
         if what in ("dna", "all"):
             sys.path.insert(0, str(Path(__file__).parent))

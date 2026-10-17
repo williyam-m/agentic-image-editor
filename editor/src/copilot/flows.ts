@@ -21,6 +21,7 @@ export interface DesignRequest {
   prompt: string; format: Format; count: number;
   reference_id?: string | null; reference_spec?: DesignSpec | null; base_brief?: Record<string, unknown> | null;
   reference_file?: string | null;
+  reference_image?: string | null;   // data-URL PNG uploaded by the designer
 }
 
 export async function runDesign(req: DesignRequest, onUpdate: (v: DesignJobView) => void): Promise<DesignJobView> {

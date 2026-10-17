@@ -63,6 +63,23 @@ def _save_b64(job_id: str, name: str, b64: str) -> str:
     return str(path.relative_to(settings.data_dir))
 
 
+def _save_image_b64(job_id: str, name: str, b64: str) -> str:
+    """Like _save_b64, but the bytes must decode as an image; stored as PNG for the vision read."""
+    data = _decode_b64(b64)
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, "reference is not an image") from e
+    path = settings.jobs_dir / job_id / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rgba = im.convert("RGBA")
+    flat = Image.new("RGB", rgba.size, (255, 255, 255))  # transparent areas read as white, not black
+    flat.paste(rgba, mask=rgba.getchannel("A"))
+    flat.save(path, "PNG", optimize=True)
+    return str(path.relative_to(settings.data_dir))
+
+
 def _render_spec(spec: dict[str, Any], folder: str, name: str, scale: float = 1.0) -> str:
     """Server-side composite of a spec (the same renderer the chat preview uses)."""
     try:
@@ -82,7 +99,7 @@ class DesignRequest(BaseModel):
     count: int = Field(default=1, ge=1, le=4)
     reference_id: str | None = None          # an analysed library reference (ref-xx)
     reference_spec: dict[str, Any] | None = None   # a board from the editor to take inspiration from
-    reference_image: str | None = None       # base64 PNG
+    reference_image: str | None = None       # base64 / data-URL image uploaded by the designer
     base_brief: dict[str, Any] | None = None  # brief stored on a Crux-made board
     reference_file: str | None = None         # a cached competitor creative (competitors/…)
 
@@ -271,7 +288,7 @@ async def create_design(req: DesignRequest) -> dict[str, str]:
     elif req.reference_spec:
         payload["reference_file"] = _render_spec(req.reference_spec, job_id, "reference.png")
     elif req.reference_image:
-        payload["reference_file"] = _save_b64(job_id, "reference.png", req.reference_image)
+        payload["reference_file"] = _save_image_b64(job_id, "reference.png", req.reference_image)
     client = await temporal()
     await client.start_workflow("DesignWorkflow", payload, id=f"design-{job_id}", task_queue=settings.temporal_task_queue)
     return {"job_id": f"design-{job_id}"}

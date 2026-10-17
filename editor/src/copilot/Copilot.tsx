@@ -6,14 +6,15 @@ import type { ReferenceInfo } from "./api";
 import { DesignCard } from "./DesignCard";
 import { DnaCard, type DnaView } from "./DnaCard";
 import { useVoice } from "../voice/useVoice";
+import { formatForAspect, imageFromTransfer, readReferenceImage, type ReferenceImage } from "./attach";
 import { VoiceButton } from "../voice/VoiceButton";
 import {
-  applyDnaFixes, inferIntent, pinDnaFindings, runBrandDna, runCommentEdit, runDesign, runEdit,
+  applyDnaFixes, detectCount, inferIntent, pinDnaFindings, runBrandDna, runCommentEdit, runDesign, runEdit,
   type DesignJobView, type Format,
 } from "./flows";
 
 type ChatItem =
-  | { id: number; kind: "user"; text: string; context?: string; voice?: boolean }
+  | { id: number; kind: "user"; text: string; context?: string; voice?: boolean; image?: string }
   | { id: number; kind: "assistant"; text: string }
   | { id: number; kind: "design"; view: DesignJobView }
   | { id: number; kind: "dna"; view: DnaView; boardId: string }
@@ -45,7 +46,11 @@ export function Copilot({ fontsVersion, notify, register }: {
   const [text, setText] = useState("");
   const [format, setFormat] = useState<Format>("feed");
   const [busy, setBusy] = useState(0);
+  const [attached, setAttached] = useState<ReferenceImage | null>(null);
+  const [refCount, setRefCount] = useState(4);
+  const [dragging, setDragging] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const boardId = useEditor((s) => s.activeBoardId);
   const boardName = useEditor((s) => s.doc.boards.find((b) => b.id === s.activeBoardId)?.name ?? null);
   const selection = useEditor((s) => s.selection);
@@ -131,14 +136,39 @@ export function Copilot({ fontsVersion, notify, register }: {
     });
   }, [design, dna, format, patch, push, register]);
 
+  const attach = useCallback(async (file: File | null) => {
+    if (!file) return;
+    try {
+      const img = await readReferenceImage(file);
+      setAttached(img);
+      setFormat(formatForAspect(img.width, img.height));
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e), "err");
+    }
+  }, [notify]);
+
+  // With an image attached the composer always generates from it; a count in the text ("2 like this") wins.
+  const imageCount = Math.max(1, Math.min(4, detectCount(text) ?? refCount));
   const intent = useMemo(() => inferIntent(text, !!boardId, selection), [text, boardId, selection]);
-  const contextLabel = intent.kind === "edit"
+  const contextLabel = attached
+    ? (imageCount > 1 ? `${imageCount} variations of your image` : "1 design like your image")
+    : intent.kind === "edit"
     ? (intent.scope === "layer" ? `Editing ${selName ?? "layer"}` : `Editing board “${boardName}”`)
     : intent.kind === "variations" ? `${intent.count} variations of “${boardName}”`
     : intent.count > 1 ? `${intent.count} new designs` : "New design";
 
   const submit = useCallback(async (raw?: string, voice = false) => {
-    const prompt = (raw ?? text).trim();
+    const typed = (raw ?? text).trim();
+    if (attached) {
+      const count = Math.max(1, Math.min(4, detectCount(typed) ?? refCount));
+      const prompt = typed || (count > 1 ? `Create ${count} different images like this` : "Create a design like this image");
+      setText("");
+      setAttached(null);
+      push({ id: nextId(), kind: "user", text: prompt, context: contextLabel, voice, image: attached.dataUrl });
+      await design({ prompt, format, count, reference_image: attached.dataUrl });
+      return;
+    }
+    const prompt = typed;
     if (!prompt) return;
     setText("");
     const b = activeBoard();
@@ -151,7 +181,7 @@ export function Copilot({ fontsVersion, notify, register }: {
     } else {
       await design({ prompt, format, count: it.kind === "create" ? it.count : 1 });
     }
-  }, [contextLabel, design, edit, format, push, selName, selection, text, variationsOf]);
+  }, [attached, contextLabel, design, edit, format, push, refCount, selName, selection, text, variationsOf]);
 
   // Voice to edit: what you say runs exactly like a typed instruction on the current selection.
   const voice = useVoice((heard) => void submit(heard, true));
@@ -181,12 +211,13 @@ export function Copilot({ fontsVersion, notify, register }: {
               <li><b>Edit a layer</b> — click it on the canvas, then tell me what to change.</li>
               <li><b>Comment</b> — press <kbd>C</kbd>, click any layer and write what you want.</li>
               <li><b>Variations</b> — with a board open, ask for “4 different images like this”.</li>
+              <li><b>From your image</b> — attach, paste or drop any ad and get up to 4 on-brand variations of it.</li>
               <li><b>Voice</b> — press <kbd>M</kbd> (or the mic) and just say the change.</li>
             </ul>
           </div>
         ) : null}
         {items.map((it) => {
-          if (it.kind === "user") return <div key={it.id} className="msg user">{it.context ? <span className="ctx">{it.voice ? "🎙 voice · " : ""}{it.context}</span> : null}<div className="bubble">{it.text}</div></div>;
+          if (it.kind === "user") return <div key={it.id} className="msg user">{it.context ? <span className="ctx">{it.voice ? "🎙 voice · " : ""}{it.context}</span> : null}{it.image ? <img className="ref-sent" src={it.image} alt="Reference image" /> : null}<div className="bubble">{it.text}</div></div>;
           if (it.kind === "assistant") return <div key={it.id} className="msg assistant"><div className="card">{it.text}</div></div>;
           if (it.kind === "design") return <div key={it.id} className="msg assistant"><DesignCard view={it.view} onVariations={variationsOf} onDna={(b) => void dna(b)} fontsVersion={fontsVersion} /></div>;
           if (it.kind === "dna") {
@@ -218,16 +249,41 @@ export function Copilot({ fontsVersion, notify, register }: {
           );
         })}
       </div>
-      <footer className="composer">
+      <footer className={`composer${dragging ? " dropping" : ""}`}
+        onDragOver={(e) => { if (imageFromTransfer(e.dataTransfer) || e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.stopPropagation(); setDragging(true); } }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
+        onDrop={(e) => {
+          const f = imageFromTransfer(e.dataTransfer);
+          setDragging(false);
+          if (!f) return;
+          e.preventDefault();
+          e.stopPropagation(); // the studio-level drop would add the file as a canvas layer
+          void attach(f);
+        }}>
         <div className="row between">
-          <span className={`context-chip ${intent.kind}`}>{intent.kind === "edit" ? "✎" : intent.kind === "variations" ? "⧉" : "✦"} {contextLabel}</span>
+          <span className={`context-chip ${attached ? "variations" : intent.kind}`}>{attached ? "⧉" : intent.kind === "edit" ? "✎" : intent.kind === "variations" ? "⧉" : "✦"} {contextLabel}</span>
           <div className="row gap6">
             {busy ? <span className="muted small">{busy} running</span> : null}
             <button className="dna-btn" disabled={!boardId} title="Check this board against the brand guidelines"
               onClick={() => boardId && void dna(boardId)}>🧬 Brand DNA</button>
           </div>
         </div>
-        {intent.kind !== "edit" ? (
+        {attached ? (
+          <div className="ref-attach" data-testid="ref-attach">
+            <img src={attached.dataUrl} alt="" />
+            <div className="ref-meta">
+              <b title={attached.name}>{attached.name}</b>
+              <span className="muted small">{attached.width}×{attached.height} · variations like this</span>
+              <div className="gen-count" role="group" aria-label="How many variations">
+                {[1, 2, 3, 4].map((n) => (
+                  <button key={n} className={imageCount === n ? "on" : ""} onClick={() => setRefCount(n)} data-testid={`ref-count-${n}`}>{n}</button>
+                ))}
+              </div>
+            </div>
+            <button className="x" aria-label="Remove image" data-testid="ref-remove" onClick={() => setAttached(null)}>×</button>
+          </div>
+        ) : null}
+        {attached || intent.kind !== "edit" ? (
           <div className="segmented">
             {FORMATS.map(([id, label]) => <button key={id} className={format === id ? "active" : ""} onClick={() => setFormat(id)}>{label}</button>)}
           </div>
@@ -241,11 +297,21 @@ export function Copilot({ fontsVersion, notify, register }: {
         ) : null}
         <div className="input-row">
           <VoiceButton state={voice.state} levels={voice.levels} enabled={voice.enabled} onClick={() => void voice.toggle()} />
+          <button className="attach" title="Upload an image to generate variations like it (or paste / drop one here)"
+            aria-label="Attach reference image" data-testid="ref-attach-btn" onClick={() => fileRef.current?.click()}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="9" cy="10" r="1.8" /><path d="m21 16-5-5-9 9" />
+            </svg>
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" hidden data-testid="ref-file"
+            onChange={(e) => { void attach(e.target.files?.[0] ?? null); e.target.value = ""; }} />
           <textarea value={text} rows={2} data-testid="chat-input"
-            placeholder={intent.kind === "edit" ? "Tell me what to change — or press M and say it" : "Describe the ad you need — or press M and say it"}
+            placeholder={attached ? "Optional: steer it, e.g. “same layout, a café owner, payroll angle”"
+              : intent.kind === "edit" ? "Tell me what to change — or press M and say it" : "Describe the ad you need — or press M and say it"}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => { const f = imageFromTransfer(e.clipboardData); if (f) { e.preventDefault(); void attach(f); } }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); } }} />
-          <button className="send" disabled={!text.trim()} onClick={() => void submit()} aria-label="Send">↑</button>
+          <button className="send" disabled={!text.trim() && !attached} onClick={() => void submit()} aria-label="Send">↑</button>
         </div>
       </footer>
     </div>
