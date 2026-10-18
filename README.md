@@ -1,5 +1,7 @@
 # Crux Studio — Layered AI Image Editor with a Brand Copilot
 
+![Crux Studio](Candidate-resources/demo/crux-studio.png)
+
 Crux Studio produces **layered, editable, brand-compliant** social ads. Describe an ad, click any layer and say
 what to change, drop a comment on an element, speak an edit, or ask for *"4 different images like this"*. Every
 headline, photo, bloom, charm, CTA and logo is its **own layer** on the canvas. Brand and legal rules (the Xero
@@ -29,8 +31,8 @@ data model, API reference, frontend, operations.
 - [Request lifecycle](#request-lifecycle)
 - [Backend architecture](#backend-architecture)
 - [Design engine](#design-engine)
-- [Brand & legal compliance](#brand--legal-compliance)
-- [Reliability & concurrency](#reliability--concurrency)
+- [Brand &amp; legal compliance](#brand--legal-compliance)
+- [Reliability &amp; concurrency](#reliability--concurrency)
 - [API surface](#api-surface)
 - [Features](#features)
 - [Getting started](#getting-started)
@@ -97,14 +99,14 @@ flowchart TB
     api & worker & celery <--> store
 ```
 
-| Tier | Responsibility | Technology |
-|---|---|---|
-| **Client** | Owns the live document; renders boards as SVG from the shared layer model; applies compiled edit ops locally (undoable); debounced autosave | React 18, TypeScript, Vite |
-| **API** | Input validation and limits, document persistence, uploads, server-side render/export, speech proxy; starts workflows and reports job status + live progress | FastAPI, Pydantic v2, uvicorn |
-| **Orchestration** | Decides *what* runs and in what order; retries, timeouts, heartbeats; publishes a versioned `progress` snapshot for streaming UX | Temporal (Python SDK) |
-| **Execution** | Fans out slow I/O and CPU work: every image layer of every variant in parallel, compositing, scraping, per-ad vision | Celery, Redis |
-| **Domain core** | Pure, framework-free functions: plan, lay out, compile edits, render, audit, enforce policy | Python, Pillow, NumPy, potrace, Playwright |
-| **AI providers** | Text reasoning, vision, image generation, speech | DeepSeek V4 Pro / V4.1 Flash (Azure, OpenAI-compatible), GPT Image, ElevenLabs Scribe v2 |
+| Tier                    | Responsibility                                                                                                                                               | Technology                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| **Client**        | Owns the live document; renders boards as SVG from the shared layer model; applies compiled edit ops locally (undoable); debounced autosave                  | React 18, TypeScript, Vite                                                               |
+| **API**           | Input validation and limits, document persistence, uploads, server-side render/export, speech proxy; starts workflows and reports job status + live progress | FastAPI, Pydantic v2, uvicorn                                                            |
+| **Orchestration** | Decides *what* runs and in what order; retries, timeouts, heartbeats; publishes a versioned `progress` snapshot for streaming UX                         | Temporal (Python SDK)                                                                    |
+| **Execution**     | Fans out slow I/O and CPU work: every image layer of every variant in parallel, compositing, scraping, per-ad vision                                         | Celery, Redis                                                                            |
+| **Domain core**   | Pure, framework-free functions: plan, lay out, compile edits, render, audit, enforce policy                                                                  | Python, Pillow, NumPy, potrace, Playwright                                               |
+| **AI providers**  | Text reasoning, vision, image generation, speech                                                                                                             | DeepSeek V4 Pro / V4.1 Flash (Azure, OpenAI-compatible), GPT Image, ElevenLabs Scribe v2 |
 
 **Core architectural decisions**
 
@@ -157,13 +159,13 @@ sequenceDiagram
     end
 ```
 
-| Workflow | Pipeline |
-|---|---|
-| `DesignWorkflow` | [vision-read reference] → plan N briefs ∥ → N layouts + brand guard ∥ → all image layers ∥ (Celery) → compose + audit + QA per variant |
-| `EditWorkflow` | LLM intent → `compile_ops` (policy, text fit, palette snap, legal line) → image jobs ∥ → merged ops |
-| `BrandDnaWorkflow` | measured audit (layers + pixels) → vision audit grounded in measured facts → merge, dedupe (IoU), score |
-| `CompetitorWorkflow` | Meta Ad Library scrape → longevity tiers → per-ad vision ∥ (20s deadline) → synthesis → on-brand ideas |
-| `BrandIngestWorkflow` | vectorise logo/blooms/waves → slice 251 charms → vision-tag assets ∥ → analyse references → insights → catalog |
+| Workflow                | Pipeline                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DesignWorkflow`      | [vision-read reference] → plan N briefs ∥ → N layouts + brand guard ∥ → all image layers ∥ (Celery) → compose + audit + QA per variant |
+| `EditWorkflow`        | LLM intent → `compile_ops` (policy, text fit, palette snap, legal line) → image jobs ∥ → merged ops                                     |
+| `BrandDnaWorkflow`    | measured audit (layers + pixels) → vision audit grounded in measured facts → merge, dedupe (IoU), score                                     |
+| `CompetitorWorkflow`  | Meta Ad Library scrape → longevity tiers → per-ad vision ∥ (20s deadline) → synthesis → on-brand ideas                                   |
+| `BrandIngestWorkflow` | vectorise logo/blooms/waves → slice 251 charms → vision-tag assets ∥ → analyse references → insights → catalog                          |
 
 ➡ Sequence diagrams for every flow: [docs/03-flows.md](docs/03-flows.md)
 
@@ -190,12 +192,12 @@ replay safe.
 
 **Model routing**
 
-| Tier | Model | Used for |
-|---|---|---|
-| `pro` | DeepSeek V4 Pro | creative briefs, edit planning, competitor synthesis (text-only, strongest reasoning) |
-| `flash` | DeepSeek V4.1 Flash | everything with vision: asset tagging, reference analysis, image compliance, art-director QA, Brand DNA, ad analysis |
-| image | GPT Image (Flare) | photos, transparent cut-outs, brand-style charms/illustrations from catalog style references, in-place photo edits |
-| speech | ElevenLabs Scribe v2 | voice edits (`no_verbatim`), proxied so the key stays on the server |
+| Tier      | Model                | Used for                                                                                                             |
+| --------- | -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `pro`   | DeepSeek V4 Pro      | creative briefs, edit planning, competitor synthesis (text-only, strongest reasoning)                                |
+| `flash` | DeepSeek V4.1 Flash  | everything with vision: asset tagging, reference analysis, image compliance, art-director QA, Brand DNA, ad analysis |
+| image     | GPT Image (Flare)    | photos, transparent cut-outs, brand-style charms/illustrations from catalog style references, in-place photo edits   |
+| speech    | ElevenLabs Scribe v2 | voice edits (`no_verbatim`), proxied so the key stays on the server                                                |
 
 ➡ Deep dive: [docs/02-backend.md](docs/02-backend.md)
 
@@ -231,42 +233,42 @@ flowchart LR
 
 `backend/crux/brand/policy.py` is the single source of non-negotiable rules, enforced at four stages:
 
-| Stage | Enforcement |
-|---|---|
-| **Plan** | Banned claims (guaranteed, best, #1, risk-free, free forever, 100%, cheapest, unlimited) and competitor names trigger a corrective re-plan with legal feedback |
-| **Generate** | Image rules in every prompt; each AI image is checked by a vision model for text, logos, watermarks, competitor branding, unsafe content and off-palette colour (non-photos), and regenerated with a targeted correction (≤3 attempts) |
-| **Edit** | The wordmark can't be removed, replaced, redrawn, rotated or recoloured outside navy/white/sky. Colours snap to the palette. Offer copy automatically gets "Terms apply." Blocked requests become the closest compliant change |
-| **Audit** | Brand guard: palette, brand fonts, logo colourway from sampled background pixels, logo size and clear space, WCAG 4.5:1 contrast, safe zones, headline length, charm count. **Brand DNA** scores 6 dimensions with located, one-click-fixable findings |
+| Stage              | Enforcement                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Plan**     | Banned claims (guaranteed, best, #1, risk-free, free forever, 100%, cheapest, unlimited) and competitor names trigger a corrective re-plan with legal feedback                                                                                               |
+| **Generate** | Image rules in every prompt; each AI image is checked by a vision model for text, logos, watermarks, competitor branding, unsafe content and off-palette colour (non-photos), and regenerated with a targeted correction (≤3 attempts)                      |
+| **Edit**     | The wordmark can't be removed, replaced, redrawn, rotated or recoloured outside navy/white/sky. Colours snap to the palette. Offer copy automatically gets "Terms apply." Blocked requests become the closest compliant change                               |
+| **Audit**    | Brand guard: palette, brand fonts, logo colourway from sampled background pixels, logo size and clear space, WCAG 4.5:1 contrast, safe zones, headline length, charm count. **Brand DNA** scores 6 dimensions with located, one-click-fixable findings |
 
 ---
 
 ## Reliability & concurrency
 
-| Mechanism | Detail |
-|---|---|
-| Durable orchestration | Temporal persists workflow state; a worker restart resumes jobs instead of losing them |
-| Layered retries | LLM/image clients: 4 attempts with jittered exponential backoff on 429/5xx/timeouts/bad JSON, then Pro⇄Flash fallback. Temporal: 3 attempts per activity with backoff |
-| Heartbeats & cancellation | The Celery bridge activity heartbeats every poll (30s timeout) and revokes the Celery task if the workflow is cancelled |
-| At-least-once execution | Celery `acks_late` + `reject_on_worker_lost`, prefetch 1; tasks are idempotent with versioned output paths |
-| Graceful degradation | A failed image layer doesn't fail the design (layer marked `failed`, retryable on canvas); compliance/QA reviewers fail open as "unverified"; the competitor analysis stage has a 20s deadline |
-| Parallelism | 64 concurrent Temporal activities; 24 Celery threads, so all image layers of 4 variants render at once |
+| Mechanism                 | Detail                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Durable orchestration     | Temporal persists workflow state; a worker restart resumes jobs instead of losing them                                                                                                           |
+| Layered retries           | LLM/image clients: 4 attempts with jittered exponential backoff on 429/5xx/timeouts/bad JSON, then Pro⇄Flash fallback. Temporal: 3 attempts per activity with backoff                           |
+| Heartbeats & cancellation | The Celery bridge activity heartbeats every poll (30s timeout) and revokes the Celery task if the workflow is cancelled                                                                          |
+| At-least-once execution   | Celery `acks_late` + `reject_on_worker_lost`, prefetch 1; tasks are idempotent with versioned output paths                                                                                   |
+| Graceful degradation      | A failed image layer doesn't fail the design (layer marked `failed`, retryable on canvas); compliance/QA reviewers fail open as "unverified"; the competitor analysis stage has a 20s deadline |
+| Parallelism               | 64 concurrent Temporal activities; 24 Celery threads, so all image layers of 4 variants render at once                                                                                           |
 
 ---
 
 ## API surface
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/designs` | create 1–4 designs (prompt, format, optional reference board / image / library ref / competitor creative) |
-| `POST /api/edits` | edit targeted layers from chat, a comment pin or voice |
-| `POST /api/brand-dna` | audit a board → scored, located, fixable findings |
-| `POST /api/competitors` · `GET /api/competitors/latest` | Meta Ad Library scan → patterns + on-brand ideas |
-| `GET /api/jobs/{id}` | job status + live progress + result |
-| `GET·PUT /api/docs/{id}` | load / autosave a document |
-| `POST /api/uploads` · `POST /api/render` | image upload · server-rendered PNG export |
-| `POST /api/voice/transcribe` · `GET /api/voice/status` | speech-to-text proxy |
-| `GET /api/brand` · `/api/brand/assets` · `/api/references` · `POST /api/brand/reindex` | brand kit, asset catalog, references, re-ingestion |
-| `GET /api/health` | API, Temporal, Celery, catalog health |
+| Endpoint                                                                                          | Purpose                                                                                                    |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `POST /api/designs`                                                                             | create 1–4 designs (prompt, format, optional reference board / image / library ref / competitor creative) |
+| `POST /api/edits`                                                                               | edit targeted layers from chat, a comment pin or voice                                                     |
+| `POST /api/brand-dna`                                                                           | audit a board → scored, located, fixable findings                                                         |
+| `POST /api/competitors` · `GET /api/competitors/latest`                                      | Meta Ad Library scan → patterns + on-brand ideas                                                          |
+| `GET /api/jobs/{id}`                                                                            | job status + live progress + result                                                                        |
+| `GET·PUT /api/docs/{id}`                                                                       | load / autosave a document                                                                                 |
+| `POST /api/uploads` · `POST /api/render`                                                     | image upload · server-rendered PNG export                                                                 |
+| `POST /api/voice/transcribe` · `GET /api/voice/status`                                       | speech-to-text proxy                                                                                       |
+| `GET /api/brand` · `/api/brand/assets` · `/api/references` · `POST /api/brand/reindex` | brand kit, asset catalog, references, re-ingestion                                                         |
+| `GET /api/health`                                                                               | API, Temporal, Celery, catalog health                                                                      |
 
 ➡ Full request/response reference: [docs/06-api-reference.md](docs/06-api-reference.md)
 
@@ -274,16 +276,16 @@ flowchart LR
 
 ## Features
 
-| Feature | How | What happens |
-|---|---|---|
-| **Create** | Copilot → describe the ad, pick 4:5 · 1:1 · 9:16 · 1.91:1 | A board with ~10 named layers appears in ~3s; photos stream into their placeholders (~20s) |
-| **Edit a layer** | Select a layer, type the change | Only that layer changes: copy re-fitted with real font metrics, colours snapped to the palette, photos edited in place |
-| **Comment to edit** | `C`, click a layer, write the change | The layer under the pin is edited; Crux replies in the thread and resolves it |
-| **Variations** | With a board open: "Create 4 different images like this" | 4 deliberately different directions (layout, colourway, copy angle) in parallel |
-| **Brand DNA** | 🧬 button | Score + 6 dimensions, every violation located; *Fix N automatically*, per-issue *Fix/Show*, *Pin issues on canvas*, *Re-check* |
-| **Voice to edit** | Press `M` and speak, e.g. "make the headline say get paid in days" | Scribe v2 transcription → runs as an edit on the selected layer or board; auto-stops on silence |
-| **Competitor intel** | *Competitors* tab → category + country | ~20 public Meta Ad Library ads, **days active** as the performance proxy, vision read of each creative, longevity-weighted patterns, 5 original on-brand ideas with *Create this →*, *Remix on-brand* on any ad |
-| **Export** | *Export PNG* | Server-rendered PNG of the board |
+| Feature                    | How                                                                  | What happens                                                                                                                                                                                                               |
+| -------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Create**           | Copilot → describe the ad, pick 4:5 · 1:1 · 9:16 · 1.91:1        | A board with ~10 named layers appears in ~3s; photos stream into their placeholders (~20s)                                                                                                                                 |
+| **Edit a layer**     | Select a layer, type the change                                      | Only that layer changes: copy re-fitted with real font metrics, colours snapped to the palette, photos edited in place                                                                                                     |
+| **Comment to edit**  | `C`, click a layer, write the change                               | The layer under the pin is edited; Crux replies in the thread and resolves it                                                                                                                                              |
+| **Variations**       | With a board open: "Create 4 different images like this"             | 4 deliberately different directions (layout, colourway, copy angle) in parallel                                                                                                                                            |
+| **Brand DNA**        | 🧬 button                                                            | Score + 6 dimensions, every violation located; *Fix N automatically*, per-issue *Fix/Show*, *Pin issues on canvas*, *Re-check*                                                                                     |
+| **Voice to edit**    | Press `M` and speak, e.g. "make the headline say get paid in days" | Scribe v2 transcription → runs as an edit on the selected layer or board; auto-stops on silence                                                                                                                           |
+| **Competitor intel** | *Competitors* tab → category + country                            | ~20 public Meta Ad Library ads, **days active** as the performance proxy, vision read of each creative, longevity-weighted patterns, 5 original on-brand ideas with *Create this →*, *Remix on-brand* on any ad |
+| **Export**           | *Export PNG*                                                       | Server-rendered PNG of the board                                                                                                                                                                                           |
 
 **Editor:** zoom/pan, deep-select into groups and masked photos, 8-handle resize, inline text editing, nudge,
 duplicate, undo/redo, layers tree (rename, hide, lock, reorder), design inspector (geometry, palette with
@@ -301,18 +303,18 @@ cp .env.example .env     # OPENAI_API_KEY, DEEPSEEK_PRO_*, DEEPSEEK_FLASH_*, opt
 ./run.sh                 # first run also analyses the brand kit (~1 min)
 ```
 
-| Command | |
-|---|---|
-| `./run.sh` | start everything and open the studio |
-| `./run.sh status` | health of API, Temporal, Celery |
-| `./run.sh test` | backend smoke tests + Playwright E2E |
-| `./run.sh stop` | stop all services |
+| Command             |                                      |
+| ------------------- | ------------------------------------ |
+| `./run.sh`        | start everything and open the studio |
+| `./run.sh status` | health of API, Temporal, Celery      |
+| `./run.sh test`   | backend smoke tests + Playwright E2E |
+| `./run.sh stop`   | stop all services                    |
 
-| URL | |
-|---|---|
-| http://localhost:8787 | landing page |
-| http://localhost:8787/studio | the editor |
-| http://localhost:8233 | Temporal UI (every job's history, retries, inputs/outputs) |
+| URL                          |                                                            |
+| ---------------------------- | ---------------------------------------------------------- |
+| http://localhost:8787        | landing page                                               |
+| http://localhost:8787/studio | the editor                                                 |
+| http://localhost:8233        | Temporal UI (every job's history, retries, inputs/outputs) |
 
 Voice editing needs an ElevenLabs key (`ELEVENLABS_API_KEY=...`). Without it the mic is disabled and everything
 else works.
